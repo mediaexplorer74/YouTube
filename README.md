@@ -2,7 +2,7 @@
 <img src="YouTube/Assets/Square150x150Logo.scale-200.png?raw=true" width=20% height=20%>
 <h1>YouTube UWP</h1>
 </div>
-<a href="https://discord.gg/KUTcABsCrX">Discord</a>
+<a href="https://github.com/zemonkamin/ytapilegacy">Server Side</a>
 
 We are looking for people who could help with the development of the project.
 
