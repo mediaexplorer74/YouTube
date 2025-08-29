@@ -24,3 +24,5 @@ Instances:
 - Search suggestions
 - authorization
 - personal recommendations
+
+<img src="https://github.com/user-attachments/assets/eda6cfdd-0211-4107-8815-26e8a5cc9e64" width=20%><img src="https://github.com/user-attachments/assets/9102baa8-ac93-42c1-affc-11933d717fd7" width=20%>
