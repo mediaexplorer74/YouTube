@@ -131,6 +131,7 @@
     </Compile>
     <Compile Include="Config.cs" />
     <Compile Include="Converters\AspectRatioConverter.cs" />
+    <Compile Include="Converters\ImageSourceConverter.cs" />
     <Compile Include="CustomMediaTransportControls.cs" />
     <Compile Include="History.xaml.cs">
       <DependentUpon>History.xaml</DependentUpon>
