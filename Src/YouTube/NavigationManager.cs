@@ -82,6 +82,8 @@ namespace YouTube
         private static EventHandler _accountTabHandler;
         private static EventHandler _historyTabHandler;
         private static EventHandler _settingsTabHandler;
+        private static EventHandler _shortsTabHandler;
+        private static EventHandler _subscriptionsTabHandler;
         private static EventHandler<string> _searchRequestedHandler;
         private static EventHandler<string> _searchTextChangedHandler;
 
@@ -113,15 +115,29 @@ namespace YouTube
                     System.Diagnostics.Debug.WriteLine("History Tab Clicked");
                     NavigateToHistory(frame);
                 };
-                _settingsTabHandler = (sender, e) => 
+                _settingsTabHandler = (sender, e) =>
                 {
                     System.Diagnostics.Debug.WriteLine("Settings Tab Clicked");
                     NavigateToSettings(frame);
+                };
+                _shortsTabHandler = (sender, e) =>
+                {
+                    System.Diagnostics.Debug.WriteLine("Shorts Tab Clicked");
+                    NavigateToShorts(frame);
+                };
+                _subscriptionsTabHandler = (sender, e) =>
+                {
+                    System.Diagnostics.Debug.WriteLine("Subscriptions Tab Clicked");
+                    NavigateToSubscriptions(frame);
                 };
 
                 // Add new handlers
                 tabbar.HomeTabClicked += _homeTabHandler;
                 tabbar.AccountTabClicked += _accountTabHandler;
+                tabbar.ShortsTabClicked += _shortsTabHandler;
+                tabbar.SubscriptionsTabClicked += _subscriptionsTabHandler;
+                tabbar.ShortsTabClicked += _shortsTabHandler;
+                tabbar.SubscriptionsTabClicked += _subscriptionsTabHandler;
 
                 System.Diagnostics.Debug.WriteLine("TabBar Navigation Initialized");
             }
@@ -215,6 +231,32 @@ namespace YouTube
             else
             {
                 System.Diagnostics.Debug.WriteLine("Frame is null when trying to navigate to Settings");
+            }
+        }
+
+        private static void NavigateToShorts(Frame frame)
+        {
+            if (frame != null)
+            {
+                System.Diagnostics.Debug.WriteLine("Navigating to Shorts");
+                frame.Navigate(typeof(Shorts));
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Frame is null when trying to navigate to Shorts");
+            }
+        }
+
+        private static void NavigateToSubscriptions(Frame frame)
+        {
+            if (frame != null)
+            {
+                System.Diagnostics.Debug.WriteLine("Navigating to Subscriptions");
+                frame.Navigate(typeof(Subscriptions));
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Frame is null when trying to navigate to Subscriptions");
             }
         }
 

@@ -22,6 +22,8 @@
         <Grid x:Name="ContentArea" Grid.Row="1">
             <local:Home x:Name="homepage"/>
             <local:Search x:Name="searchpage" Visibility="Collapsed"/>
+            <local:Shorts x:Name="shortspage" Visibility="Collapsed"/>
+            <local:Subscriptions x:Name="subscriptionspage" Visibility="Collapsed"/>
         </Grid>
 
         <!-- TabBar -->

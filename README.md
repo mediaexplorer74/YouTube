@@ -1,4 +1,4 @@
-# YouTube 2.0.8 - dev branch
+# YouTube 2.0.9 - dev branch
 ![Logo](Images/logo.png)
 
 My fork of zemon's youtube_uwp project for my own micro-research. No less, no more! :)
@@ -7,11 +7,17 @@ My fork of zemon's youtube_uwp project for my own micro-research. No less, no mo
 - https://legacyprojects.ru/youtube/ LegacyProjects (operation: 50 / 50, heh!)
 - https://qqq.bccst.ru/youtube/ qqq.bccst.ru (old php version)
 
-## Screenshot(s)
+## Tech. details
+- Win. SDK target : 19041
+- Min. Win. SDK target: 10586
 
 ## Screenshot(s)
 ![Windows 11 Lite](Images/sshot01.png)
 ![Windows 11 Lite](Images/sshot02.png)
+
+## Experimental things
+- Short -- unblocking failed (possible reason: server part uncomplete, no shorts realized yet ?)
+- Subscriptions - unblocking failed (reason: I not logined?)
  
 ## Implemented features:
 - categories

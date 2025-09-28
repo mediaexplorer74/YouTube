@@ -112,6 +112,16 @@ namespace YouTube
             await homepage.RefreshData();
         }
 
+        public void NavigateToShorts()
+        {
+            ShowShortsPage();
+        }
+
+        public void NavigateToSubscriptions()
+        {
+            ShowSubscriptionsPage();
+        }
+
         private async Task CheckAndRequestApiKey()
         {
             try
@@ -154,6 +164,8 @@ namespace YouTube
             {
                 homepage.Visibility = Visibility.Visible;
                 searchpage.Visibility = Visibility.Collapsed;
+                shortspage.Visibility = Visibility.Collapsed;
+                subscriptionspage.Visibility = Visibility.Collapsed;
                 await Task.Delay(200); // Add delay before refreshing data
                 await homepage.RefreshData();
             }
@@ -169,8 +181,52 @@ namespace YouTube
             {
                 homepage.Visibility = Visibility.Collapsed;
                 searchpage.Visibility = Visibility.Visible;
+                shortspage.Visibility = Visibility.Collapsed;
+                subscriptionspage.Visibility = Visibility.Collapsed;
                 await Task.Delay(200); // Add delay before performing search
                 searchpage.PerformSearch(searchQuery);
+            }
+            catch (Exception)
+            {
+                // Handle errors silently
+            }
+        }
+
+        private async void ShowShortsPage()
+        {
+            try
+            {
+                homepage.Visibility = Visibility.Collapsed;
+                searchpage.Visibility = Visibility.Collapsed;
+                shortspage.Visibility = Visibility.Visible;
+                subscriptionspage.Visibility = Visibility.Collapsed;
+                await Task.Delay(200); // Add delay before refreshing data
+                // Assuming Shorts page has a method to refresh data
+                if (shortspage != null)
+                {
+                    // No specific refresh method to call, page will load when shown
+                }
+            }
+            catch (Exception)
+            {
+                // Handle errors silently
+            }
+        }
+
+        private async void ShowSubscriptionsPage()
+        {
+            try
+            {
+                homepage.Visibility = Visibility.Collapsed;
+                searchpage.Visibility = Visibility.Collapsed;
+                shortspage.Visibility = Visibility.Collapsed;
+                subscriptionspage.Visibility = Visibility.Visible;
+                await Task.Delay(200); // Add delay before refreshing data
+                // Assuming Subscriptions page has a method to refresh data
+                if (subscriptionspage != null)
+                {
+                    // No specific refresh method to call, page will load when shown
+                }
             }
             catch (Exception)
             {
