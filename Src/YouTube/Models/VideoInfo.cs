@@ -19,9 +19,6 @@ namespace YouTube.Models
         [JsonProperty("channel_thumbnail")]
         public string channel_thumbnail { get; set; }
 
-        [JsonProperty("duration")]
-        public string duration { get; set; }
-
         [JsonProperty("views")]
         public string Views { get; set; }
 
@@ -31,4 +28,4 @@ namespace YouTube.Models
         [JsonProperty("views_text")]
         public string ViewsText { get; set; }
     }
-}
+} 

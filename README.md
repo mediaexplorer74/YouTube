@@ -1,4 +1,4 @@
-# YouTube 2.0.10 - dev branch
+# YouTube 2.0.8 - master branch
 ![Logo](Images/logo.png)
 
 My fork of zemon's youtube_uwp project for my own micro-research. No less, no more! :)
@@ -7,17 +7,11 @@ My fork of zemon's youtube_uwp project for my own micro-research. No less, no mo
 - https://legacyprojects.ru/youtube/ LegacyProjects (operation: 50 / 50, heh!)
 - https://qqq.bccst.ru/youtube/ qqq.bccst.ru (old php version)
 
-## Tech. details
-- Win. SDK target : 19041
-- Min. Win. SDK target: 10586
+## Screenshot(s)
 
 ## Screenshot(s)
-![Windows 11 Lite](Images/screenshot.png)
-
-## Experimental things
-- Video page binding error fixed (?)
-- Short - unblocking failed (possible reason: server part uncomplete, no shorts realized yet ?)
-- Subscriptions - unblocking failed (reason: I not logined?)
+![Windows 11 Lite](Images/sshot01.png)
+![Windows 11 Lite](Images/sshot02.png)
  
 ## Implemented features:
 - categories
@@ -36,10 +30,6 @@ My fork of zemon's youtube_uwp project for my own micro-research. No less, no mo
 ## Status
 - Not working in my location (95 % of errors with my google youtube api key, heh!)
 
-## TODO
-- Binding bugs still there... Try to fix them!
-- Realize some video "pre-loading" (smart caching) to Video folder to aviid "offline" moments :)
-
 ## References
 - https://github.com/zemonkamin/youtube_uwp Original Youtube_uwp project
 - https://github.com/zemonkamin Original Youtube_uwp developer
@@ -48,6 +38,4 @@ My fork of zemon's youtube_uwp project for my own micro-research. No less, no mo
 As is. No support. RnD only. DIY.
 
 ## .
-[m][e] Sep, 28 2025
-
-![Logo](Images/footer.png)
+[m][e] 2025

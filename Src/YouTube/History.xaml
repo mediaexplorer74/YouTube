@@ -5,13 +5,11 @@
     xmlns:local="using:YouTube"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:converters="using:YouTube.Converters"
     mc:Ignorable="d"
     Background="Black">
 
     <Page.Resources>
         <local:StringIsNullOrEmptyToVisibilityConverter x:Key="StringIsNullOrEmptyToVisibilityConverter"/>
-        <converters:ImageSourceConverter x:Key="ImageSourceConverter"/>
     </Page.Resources>
 
     <Grid Background="Black">
@@ -74,7 +72,7 @@
                                     <Border Width="36" Height="36" CornerRadius="18" Background="#333333"
                                            VerticalAlignment="Center"
                                            Visibility="{Binding channel_thumbnail, Converter={StaticResource StringIsNullOrEmptyToVisibilityConverter}}">
-                                        <Image Source="{Binding channel_thumbnail, Converter={StaticResource ImageSourceConverter}, FallbackValue='ms-appx:///Assets/placeholder.png'}"
+                                        <Image Source="{Binding channel_thumbnail, FallbackValue='ms-appx:///Assets/placeholder.png'}"
                                                Stretch="UniformToFill"/>
                                     </Border>
                                     

@@ -3,12 +3,12 @@
   <Identity
     Name="ME.YouTubeV2"
     Publisher="CN=Admin"
-    Version="2.0.10.0" />
+    Version="2.0.8.0" />
 
   <mp:PhoneIdentity PhoneProductId="7740f2aa-5896-46a9-bd9f-c4a564dfdd59" PhonePublisherId="22000000-3311-1100-0047-800006777202"/>
 
   <Properties>
-    <DisplayName>YouTube v2.0.10</DisplayName>
+    <DisplayName>YouTube v2.0.8</DisplayName>
     <PublisherDisplayName>Admin</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -20,7 +20,7 @@
   </Resources>
   <Applications>
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="YouTube.App">
-      <uap:VisualElements DisplayName="YouTube 2.0.10" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" Description="YouTube uwp app (video streaming client app)" BackgroundColor="transparent">
+      <uap:VisualElements DisplayName="YouTube 2.0.8" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" Description="YouTube uwp app (video streaming client app)" BackgroundColor="transparent">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" ShortName="YouTube" Square71x71Logo="Assets\SmallTile.png" Square310x310Logo="Assets\LargeTile.png">
           <uap:ShowNameOnTiles>
             <uap:ShowOn Tile="square150x150Logo" />

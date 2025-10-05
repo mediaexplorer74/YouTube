@@ -31,9 +31,9 @@ namespace YouTube
 
         private void InitializeTabBar()
         {
-            // Кнопки теперь активны
-            // SetButtonInactive(ShortsButton, "Shorts");
-            // SetButtonInactive(SubscriptionsButton, "Подписки");
+            // Делаем кнопки Shorts и Подписки неактивными и серыми
+            SetButtonInactive(ShortsButton, "Shorts");
+            SetButtonInactive(SubscriptionsButton, "Подписки");
         }
 
         private void SetButtonInactive(Button button, string text)
