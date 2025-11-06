@@ -235,7 +235,51 @@ namespace YouTube
                     try
                     {
                         var response = await client.GetStringAsync(searchUrl);
-                        var newResults = JsonConvert.DeserializeObject<List<VideoInfo>>(response);
+                        
+                        // Check for potential error response first (if it's a JSON object with an "error" key)
+                        if (response.TrimStart().StartsWith("{") && response.Contains("\"error\""))
+                        {
+                            // It's likely an error object, not a list
+                            // You might want to deserialize this into an error model and display the error message
+                            System.Diagnostics.Debug.WriteLine($"API returned an error: {response}");
+                            await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+                            {
+                                UpdateUI(false); // Indicate failure
+                                // Optionally, display the error message from the response
+                            });
+                            return;
+                        }
+
+                        List<VideoInfo> newResults = null;
+
+                        // Try deserializing as a list directly
+                        try
+                        {
+                            newResults = JsonConvert.DeserializeObject<List<VideoInfo>>(response);
+                        }
+                        catch (JsonSerializationException)
+                        {
+                            // If deserializing as a list fails, try deserializing as a single object and wrap it in a list
+                            try
+                            {
+                                var singleVideoInfo = JsonConvert.DeserializeObject<VideoInfo>(response);
+                                if (singleVideoInfo != null)
+                                {
+                                    newResults = new List<VideoInfo> { singleVideoInfo };
+                                }
+                            }
+                            catch (JsonSerializationException innerEx)
+                            {
+                                // If both fail, log the error and update UI to show failure
+                                System.Diagnostics.Debug.WriteLine($"Deserialization failed for both List<VideoInfo> and VideoInfo: {innerEx}");
+                                await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
+                                {
+                                    UpdateUI(false);
+                                });
+                                return; // Exit after handling deserialization errors
+                            }
+                        }
+
                         await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
                         {
                             searchResults.Clear();

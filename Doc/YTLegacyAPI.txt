@@ -1,0 +1,41 @@
+YouTube Legacy API LegacyProjects
+A Windows Phone inspired YouTube API service
+About
+This is a legacy YouTube API service that provides endpoints for fetching video information, channel data, and more. Built with Python and Flask.
+
+Part of the LegacyProjects initiative, bringing back the classic YouTube experience.
+
+Authentication
+/auth - OAuth authentication with QR code
+
+/auth/status - Check auth status
+
+/auth/simple - Simple auth (POST)
+
+Account Info
+/account_info?token=REFRESH_TOKEN - Get Google account information
+
+Recommendations
+/get_recommendations.php?token=TOKEN&count=N - InnerTube API (формат как /get_top_videos.php)
+
+Example: /get_recommendations_innertube?token=YOUR_TOKEN&count=10
+
+Video Information
+/get-ytvideo-info.php
+
+Channel Videos
+/get_author_videos.php
+
+Search Videos
+/get_search_videos.php
+
+Top Videos
+/get_top_videos.php
+
+Categories
+/get-categories.php
+
+Related Videos
+/get_related_videos.php
+
+Running on port 2823 | LegacyProjects YouTube API Service

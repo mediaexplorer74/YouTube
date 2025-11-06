@@ -1,4 +1,4 @@
-# YouTube 2.0.10 - dev branch
+# YouTube 2.1.100 - dev branch
 ![Logo](Images/logo.png)
 
 My fork of zemon's youtube_uwp project for my own micro-research. No less, no more! :)
@@ -15,6 +15,7 @@ My fork of zemon's youtube_uwp project for my own micro-research. No less, no mo
 ![Windows 11 Lite](Images/screenshot.png)
 
 ## Experimental things
+- MediaPlayer->VLC+VLC.MediaElement transferring done :)
 - Video page binding error fixed (?)
 - Short - unblocking failed (possible reason: server part uncomplete, no shorts realized yet ?)
 - Subscriptions - unblocking failed (reason: I not logined?)
@@ -36,7 +37,11 @@ My fork of zemon's youtube_uwp project for my own micro-research. No less, no mo
 ## Status
 - Not working in my location (95 % of errors with my google youtube api key, heh!)
 
+## Very big problem
+- No media playback on Windows10Mobile! ARM edition suddenly halt :( However, x64 edition operates normally... so strange!!!
+
 ## TODO
+- Add Fullscreen mode on/off switch handling.
 - Binding bugs still there... Try to fix them!
 - Realize some video "pre-loading" (smart caching) to Video folder to aviid "offline" moments :)
 
@@ -48,6 +53,6 @@ My fork of zemon's youtube_uwp project for my own micro-research. No less, no mo
 As is. No support. RnD only. DIY.
 
 ## .
-[m][e] Sep, 28 2025
+[m][e] Nov, 06 2025
 
 ![Logo](Images/footer.png)

@@ -1,8 +1,9 @@
-﻿<Page
+<Page
     x:Class="YouTube.Video"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:YouTube"
+    xmlns:lvs="using:LibVLCSharp.Platforms.UWP"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
@@ -32,16 +33,16 @@
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Hidden">
                 <StackPanel x:Name="PlayerInfoPanel" Margin="0">
                     <Grid x:Name="VideoPlayerContainer" Background="Black">
-                        <MediaPlayerElement x:Name="VideoPlayer" 
-                                           AreTransportControlsEnabled="True"
-                                           Height="300"
-                                           DoubleTapped="VideoPlayer_DoubleTapped"
-                                           RequestedTheme="Dark"
-                                           Background="Black">
-                            <MediaPlayerElement.TransportControls>
-                                <local:CustomMediaTransportControls/>
-                            </MediaPlayerElement.TransportControls>
-                        </MediaPlayerElement>
+                        <VLC:MediaElement x:Name="VlcMediaElement"
+                                          xmlns:VLC="using:VLC"
+                                          Height="300"
+                                          AreTransportControlsEnabled="True"
+                                          DoubleTapped="VideoPlayer_DoubleTapped"
+                                          Background="Black">
+                            <VLC:MediaElement.TransportControls>
+                                <VLC:MediaTransportControls/>
+                            </VLC:MediaElement.TransportControls>
+                        </VLC:MediaElement>
                         <Grid x:Name="SkipOverlay" Visibility="Collapsed" Background="#80000000" IsHitTestVisible="False">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <FontIcon x:Name="SkipIcon" Glyph="&#xE111;" FontFamily="Segoe MDL2 Assets" FontSize="48" Foreground="White"/>

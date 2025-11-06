@@ -30,5 +30,11 @@ namespace YouTube.Models
 
         [JsonProperty("views_text")]
         public string ViewsText { get; set; }
+
+        // Computed properties to support XAML bindings that expect PascalCase
+        public string Title => title;
+        public string Author => author;
+        public string Thumbnail => thumbnail;
+        public string ChannelThumbnail => channel_thumbnail;
     }
 }

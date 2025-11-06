@@ -1,24 +1,30 @@
-﻿﻿using System;
-using System.Collections.Generic;
-using System.Net.Http;
-using System.Threading.Tasks;
-using Windows.Storage;
-using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Navigation;
+﻿using LibVLCSharp.Shared;
 using Newtonsoft.Json;
+﻿﻿﻿﻿﻿using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading.Tasks;
+using VLC;
+using Windows.Foundation;
+using Windows.Media.Core;
+using Windows.Media.Playback;
+using Windows.Storage;
+using Windows.Storage.Streams;
+using Windows.System.Display;
 using Windows.UI.Core;
 using Windows.UI.Xaml;
-using Windows.UI.Xaml.Input;
-using Windows.System.Display;
-using Windows.Media.Playback;
-using Windows.Media.Core;
-using System.Runtime.CompilerServices;
-using System.ComponentModel;
-using YouTube.Models;
-using System.Linq;
-using Windows.UI.Xaml.Media;
+using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
-using Windows.Foundation;
+using Windows.UI.Xaml.Input;
+using Windows.UI.Xaml.Media;
+using Windows.UI.Xaml.Navigation;
+using YouTube.Models;
 
 namespace YouTube
 {
@@ -43,6 +49,7 @@ namespace YouTube
         private bool _isLiked = false;
         private bool _isChangingQuality = false; // Flag to prevent storage conflicts during quality change
         private TimeSpan _videoDuration;
+        // Переход на VLC.MediaElement: внутренний LibVLC управляется самим элементом
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -60,7 +67,8 @@ namespace YouTube
             NavigationManager.InitializeNavBarNavigation(navbar, _frame);
 
             this.Loaded += Video_Loaded;
-            this.Unloaded += Video_Unloaded;
+            // Remove Unloaded event subscription as cleanup will be handled in OnNavigatedFrom
+            // this.Unloaded += Video_Unloaded; 
 
             _skipOverlayTimer = new DispatcherTimer();
             _skipOverlayTimer.Interval = TimeSpan.FromSeconds(2);
@@ -68,12 +76,7 @@ namespace YouTube
 
             Window.Current.SizeChanged += Window_SizeChanged;
 
-            // Hook settings click from custom transport controls
-            var controls = VideoPlayer.TransportControls as CustomMediaTransportControls;
-            if (controls != null)
-            {
-                controls.SettingsClicked += Controls_SettingsClicked;
-            }
+            // Убираем зависимость от CustomMediaTransportControls и переносим настройки в отдельный UI (временно отключено)
 
             // Default to standard (no explicit quality parameter)
             _currentQuality = null;
@@ -99,21 +102,24 @@ namespace YouTube
             SystemNavigationManager.GetForCurrentView().BackRequested += OnBackRequested;
             UpdateVideoPlayerLayout();
 
+            // Инициализация VLC.MediaElement не требует ручного LibVLC — XAML-элемент справляется сам.
+
             if (!string.IsNullOrEmpty(_currentVideoId))
             {
                 LoadVideo(_currentVideoId);
             }
         }
 
-        private void Video_Unloaded(object sender, RoutedEventArgs e)
+        /*private void Video_Unloaded(object sender, RoutedEventArgs e)
         {
             try
             {
-                if (VideoPlayer.MediaPlayer != null)
+                try
                 {
-                    VideoPlayer.MediaPlayer.Pause();
-                    VideoPlayer.Source = null;
+                    VlcMediaElement.Pause();
+                    VlcMediaElement.Source = null;
                 }
+                catch { }
 
                 if (_displayRequest != null)
                 {
@@ -125,7 +131,7 @@ namespace YouTube
                 Window.Current.SizeChanged -= Window_SizeChanged;
             }
             catch (Exception) { }
-        }
+        }*/
 
         private void OnBackRequested(object sender, BackRequestedEventArgs e)
         {
@@ -177,6 +183,31 @@ namespace YouTube
             }
 
             UpdateBackButtonVisibility();
+        }
+
+        protected override void OnNavigatedFrom(NavigationEventArgs e)
+        {
+            base.OnNavigatedFrom(e);
+
+            try
+            {
+                try
+                {
+                    VlcMediaElement.Pause();
+                    VlcMediaElement.Source = null;
+                }
+                catch { }
+
+                if (_displayRequest != null)
+                {
+                    _displayRequest.RequestRelease();
+                    _displayRequest = null;
+                }
+
+                SystemNavigationManager.GetForCurrentView().BackRequested -= OnBackRequested;
+                Window.Current.SizeChanged -= Window_SizeChanged;
+            }
+            catch (Exception) { }           
         }
 
         private async void LoadVideo(string videoId)
@@ -250,10 +281,18 @@ namespace YouTube
             }
         }
 
+        private static bool _isDialogShowing = false;
         private async void ShowErrorDialog(string message)
         {
+            Debug.WriteLine("[error] "+ message);
+            if (_isDialogShowing)
+            {
+                return; // A dialog is already showing, so don't show another one.
+            }
+
             try
             {
+                _isDialogShowing = true;
                 await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, async () =>
                 {
                     var dialog = new ContentDialog
@@ -266,8 +305,15 @@ namespace YouTube
                     _frame.Navigate(typeof(MainPage));
                 });
             }
-            catch (Exception) { }
-        }
+            catch (Exception)
+            {
+                // Handle potential exceptions during dialog creation/showing if necessary.
+            }
+            finally
+            {
+                _isDialogShowing = false;
+            }
+        }//
 
         private async Task LoadRelatedVideos()
         {
@@ -515,7 +561,8 @@ namespace YouTube
             try
             {
                 DateTime publishedDate;
-                if (DateTime.TryParseExact(publishedAtString, "dd.MM.yyyy, HH:mm:ss", null, System.Globalization.DateTimeStyles.None, out publishedDate))
+                if (DateTime.TryParseExact(publishedAtString, "dd.MM.yyyy, HH:mm:ss", 
+                    null, System.Globalization.DateTimeStyles.None, out publishedDate))
                 {
                     var timeSpan = DateTime.Now - publishedDate;
                     var totalDays = (int)timeSpan.TotalDays;
@@ -615,22 +662,22 @@ namespace YouTube
         {
             try
             {
-                if (VideoPlayer.MediaPlayer == null) return;
+                var target = sender as FrameworkElement ?? (FrameworkElement)VlcMediaElement;
 
-                var tapPosition = e.GetPosition(VideoPlayer);
-                var playerWidth = VideoPlayer.ActualWidth;
+                var tapPosition = e.GetPosition(target);
+                var playerWidth = target.ActualWidth;
                 bool isRightSide = tapPosition.X > playerWidth / 2;
                 int skipSeconds = isRightSide ? 10 : -10;
 
-                var currentPosition = VideoPlayer.MediaPlayer.Position;
-                var newPosition = currentPosition.Add(TimeSpan.FromSeconds(skipSeconds));
-
-                if (newPosition < TimeSpan.Zero)
-                    newPosition = TimeSpan.Zero;
-                else if (newPosition > _videoDuration)
-                    newPosition = _videoDuration;
-
-                VideoPlayer.MediaPlayer.Position = newPosition;
+                try
+                {
+                    var currentPosition = VlcMediaElement.Position;
+                    var newPosition = currentPosition.Add(TimeSpan.FromSeconds(skipSeconds));
+                    if (newPosition < TimeSpan.Zero) newPosition = TimeSpan.Zero;
+                    else if (newPosition > _videoDuration) newPosition = _videoDuration;
+                    VlcMediaElement.Position = newPosition;
+                }
+                catch { }
 
                 SkipOverlay.Visibility = Visibility.Visible;
                 SkipIcon.Glyph = skipSeconds > 0 ? "\uE111" : "\uE112";
@@ -910,83 +957,27 @@ namespace YouTube
             var windowHeight = Window.Current.Bounds.Height;
             bool isPortrait = windowHeight > windowWidth;
 
+            PlayerColumn.Width = new GridLength(1, GridUnitType.Star);
             if (isPortrait)
             {
-                if (_isFullScreen)
-                {
-                    ToggleFullScreen();
-                }
-
-                PlayerColumn.Width = new GridLength(1, GridUnitType.Star);
                 RelatedColumn.Width = new GridLength(0);
                 RelatedPanel.Visibility = Visibility.Collapsed;
                 RelatedPanelVertical.Visibility = Visibility.Visible;
-                VideoPlayer.Height = windowWidth * 0.5625; // 16:9 aspect ratio
-
-                PlayerInfoPanel.Margin = new Thickness(0);
+                VlcMediaElement.Height = windowWidth * 0.5625; // 16:9
             }
             else
             {
-                if (!_isFullScreen)
-                {
-                    ToggleFullScreen();
-                }
-
-                PlayerColumn.Width = new GridLength(1, GridUnitType.Star);
                 RelatedColumn.Width = new GridLength(400);
                 RelatedPanel.Visibility = Visibility.Visible;
                 RelatedPanelVertical.Visibility = Visibility.Collapsed;
-                VideoPlayer.Height = 300;
-
-                PlayerInfoPanel.Margin = new Thickness(0);
+                VlcMediaElement.Height = 300;
             }
+            PlayerInfoPanel.Margin = new Thickness(0);
         }
 
-        private async void ToggleFullScreen()
-        {
-            if (VideoPlayer.MediaPlayer == null) return;
-
-            _isFullScreen = !_isFullScreen;
-
-            if (_isFullScreen)
-            {
-                VideoPlayer.AreTransportControlsEnabled = true;
-                VideoPlayer.IsFullWindow = true;
-
-                navbar.Visibility = Visibility.Collapsed;
-                tabbar.Visibility = Visibility.Collapsed;
-                RelatedPanel.Visibility = Visibility.Collapsed;
-                RelatedPanelVertical.Visibility = Visibility.Collapsed;
-                PlayerInfoPanel.Margin = new Thickness(0);
-                var controls = VideoPlayer.TransportControls as CustomMediaTransportControls;
-                if (controls != null) controls.IsFullscreen = true;
-            }
-            else
-            {
-                VideoPlayer.IsFullWindow = false;
-
-                navbar.Visibility = Visibility.Visible;
-                tabbar.Visibility = Visibility.Visible;
-
-                var windowWidth = Window.Current.Bounds.Width;
-                var windowHeight = Window.Current.Bounds.Height;
-                bool isPortrait = windowHeight > windowWidth;
-
-                if (isPortrait)
-                {
-                    RelatedPanel.Visibility = Visibility.Collapsed;
-                    RelatedPanelVertical.Visibility = Visibility.Visible;
-                }
-                else
-                {
-                    RelatedPanel.Visibility = Visibility.Visible;
-                    RelatedPanelVertical.Visibility = Visibility.Collapsed;
-                }
-
-                PlayerInfoPanel.Margin = new Thickness(0);
-                var controls = VideoPlayer.TransportControls as CustomMediaTransportControls;
-                if (controls != null) controls.IsFullscreen = false;
-            }
+        // Полноэкранный режим временно отключён согласно указанию
+        private async void ToggleFullScreen() 
+        { 
         }
 
         private async void Controls_SettingsClicked(object sender, EventArgs e)
@@ -995,51 +986,7 @@ namespace YouTube
             {
                 var flyoutContent = new StackPanel { Orientation = Orientation.Vertical };
 
-                var speedHeader = new TextBlock { Text = "Скорость воспроизведения", Foreground = new SolidColorBrush(Windows.UI.Colors.White), Margin = new Thickness(0, 0, 0, 4) };
-
-                var speedCombo = new ComboBox { Width = 160 };
-                speedCombo.Items.Add("0.5x");
-                speedCombo.Items.Add("0.75x");
-                speedCombo.Items.Add("1.0x");
-                speedCombo.Items.Add("1.25x");
-                speedCombo.Items.Add("1.5x");
-                speedCombo.Items.Add("1.75x");
-                speedCombo.Items.Add("2.0x");
-
-                double currentRate = 1.0;
-                if (VideoPlayer?.MediaPlayer != null)
-                {
-                    currentRate = VideoPlayer.MediaPlayer.PlaybackSession.PlaybackRate;
-                }
-
-                string currentRateText = $"{currentRate:0.##}x";
-                int foundIndex = -1;
-                for (int i = 0; i < speedCombo.Items.Count; i++)
-                {
-                    if ((string)speedCombo.Items[i] == currentRateText)
-                    {
-                        foundIndex = i;
-                        break;
-                    }
-                }
-                speedCombo.SelectedIndex = foundIndex >= 0 ? foundIndex : 2; // default 1.0x
-
-                speedCombo.SelectionChanged += (s, args) =>
-                {
-                    try
-                    {
-                        if (VideoPlayer?.MediaPlayer == null) return;
-                        var selected = (string)speedCombo.SelectedItem;
-                        if (string.IsNullOrEmpty(selected)) return;
-                        var rateString = selected.Replace("x", "");
-                        double rate;
-                        if (double.TryParse(rateString, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out rate))
-                        {
-                            VideoPlayer.MediaPlayer.PlaybackSession.PlaybackRate = rate;
-                        }
-                    }
-                    catch { }
-                };
+                // Скорость воспроизведения временно исключена из настроек
 
                 var qualityHeader = new TextBlock { Text = "Качество", Foreground = new SolidColorBrush(Windows.UI.Colors.White), Margin = new Thickness(0, 12, 0, 4) };
                 var qualityCombo = new ComboBox { Width = 160 };
@@ -1092,10 +1039,19 @@ namespace YouTube
                     }
                 };
 
-                flyoutContent.Children.Add(speedHeader);
-                flyoutContent.Children.Add(speedCombo);
+                // (скорость отключена)
                 flyoutContent.Children.Add(qualityHeader);
                 flyoutContent.Children.Add(qualityCombo);
+
+                // Кнопка скачивания
+                var downloadHeader = new TextBlock { Text = "Загрузка", Foreground = new SolidColorBrush(Windows.UI.Colors.White), Margin = new Thickness(0, 12, 0, 4) };
+                var downloadButton = new Button { Content = "Скачать видео", Width = 160 };
+                downloadButton.Click += async (s2, a2) =>
+                {
+                    await DownloadCurrentVideoAsync();
+                };
+                flyoutContent.Children.Add(downloadHeader);
+                flyoutContent.Children.Add(downloadButton);
 
                 var flyout = new Flyout
                 {
@@ -1103,11 +1059,7 @@ namespace YouTube
                     Placement = FlyoutPlacementMode.Bottom
                 };
 
-                var anchor = sender as FrameworkElement;
-                if (anchor == null)
-                {
-                    anchor = VideoPlayer;
-                }
+                var anchor = sender as FrameworkElement ?? (FrameworkElement)VlcMediaElement;
                 flyout.ShowAt(anchor);
             }
             catch (Exception ex)
@@ -1140,42 +1092,8 @@ namespace YouTube
                     System.Diagnostics.Debug.WriteLine($"Using quality {_currentQuality} for video {_currentVideoId}");
                 }
 
-                System.Diagnostics.Debug.WriteLine($"Setting video source to: {videoUrl}");
-
-                try
-                {
-                    var mediaSource = MediaSource.CreateFromUri(new Uri(videoUrl));
-                    VideoPlayer.Source = mediaSource;
-                    VideoPlayer.MediaPlayer.Play();
-                    System.Diagnostics.Debug.WriteLine("Video source set successfully");
-                }
-                catch (System.Runtime.InteropServices.COMException comEx)
-                {
-                    System.Diagnostics.Debug.WriteLine($"COM Exception setting video source: {comEx.Message}");
-                    System.Diagnostics.Debug.WriteLine($"HRESULT: 0x{comEx.HResult:X8}");
-
-                    if (!string.IsNullOrEmpty(_currentQuality))
-                    {
-                        System.Diagnostics.Debug.WriteLine("Trying fallback to standard quality due to COM exception");
-                        var fallbackUrl = Config.GetVideoUrl(_currentVideoId);
-                        try
-                        {
-                            var fallbackSource = MediaSource.CreateFromUri(new Uri(fallbackUrl));
-                            VideoPlayer.Source = fallbackSource;
-                            VideoPlayer.MediaPlayer.Play();
-                            _currentQuality = null;
-                            System.Diagnostics.Debug.WriteLine($"Fallback to standard quality successful: {fallbackUrl}");
-                        }
-                        catch (Exception fallbackEx)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Fallback also failed: {fallbackEx.Message}");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"General exception setting video source: {ex.Message}");
-                }
+                System.Diagnostics.Debug.WriteLine($"Preparing VLC.MediaElement playback for: {videoUrl}");
+                StartPlaybackVlc(videoUrl, autoPlay: !_isChangingQuality);
             }
             catch (Exception ex)
             {
@@ -1189,172 +1107,186 @@ namespace YouTube
             {
                 _isChangingQuality = true;
 
-                if (_isFullScreen)
-                {
-                    ToggleFullScreen();
-                }
-
+                // Сохраняем текущую позицию и состояние воспроизведения
                 TimeSpan currentPosition = TimeSpan.Zero;
-                double currentRate = 1.0;
                 bool wasPlaying = false;
-
-                if (VideoPlayer?.MediaPlayer?.PlaybackSession != null)
+                try
                 {
-                    try
-                    {
-                        currentPosition = VideoPlayer.MediaPlayer.Position;
-                        currentRate = VideoPlayer.MediaPlayer.PlaybackSession.PlaybackRate;
-                        wasPlaying = VideoPlayer.MediaPlayer.CurrentState == MediaPlayerState.Playing;
-
-                        VideoPlayer.MediaPlayer.Pause();
-
-                        System.Diagnostics.Debug.WriteLine($"Saved playback state: position={currentPosition.TotalSeconds}s, rate={currentRate}, was playing={wasPlaying}");
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Error saving playback state: {ex.Message}");
-                    }
+                    currentPosition = VlcMediaElement.Position;
+                    wasPlaying = VlcMediaElement.CurrentState == MediaElementState.Playing;
+                    VlcMediaElement.Pause();
+                    System.Diagnostics.Debug.WriteLine($"Saved playback state: position={currentPosition.TotalSeconds}s, playing={wasPlaying}");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error saving playback state: {ex.Message}");
                 }
 
                 _currentQuality = newQuality;
-
                 System.Diagnostics.Debug.WriteLine($"Starting quality change to: {newQuality ?? "standard"}");
 
-                await Task.Delay(500);
+                // Небольшая задержка перед сменой источника
+                await Task.Delay(200);
 
-                ApplyAndPlayCurrentUrlWithQuality();
-
-                var timeout = TimeSpan.FromSeconds(30);
-                var startTime = DateTime.Now;
-                bool mediaReady = false;
-
-                var mediaOpenedTask = new TaskCompletionSource<bool>();
-
-                TypedEventHandler<MediaPlayer, object> mediaOpenedHandler = (s, e) =>
-                {
-                    mediaOpenedTask.TrySetResult(true);
-                };
-
+                // Меняем источник без автозапуска
                 try
                 {
-                    if (VideoPlayer?.MediaPlayer != null)
-                    {
-                        VideoPlayer.MediaPlayer.MediaOpened += mediaOpenedHandler;
-                    }
+                    string videoUrl = string.IsNullOrEmpty(_currentQuality)
+                        ? Config.GetVideoUrl(_currentVideoId)
+                        : Config.GetVideoUrl(_currentVideoId, _currentQuality);
+                    StartPlaybackVlc(videoUrl, autoPlay: false);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error starting playback during quality change: {ex.Message}");
+                    ApplyAndPlayCurrentUrlWithQuality(); // fallback to legacy path
+                    return;
+                }
 
-                    var timeoutTask = Task.Delay(timeout);
-                    var completedTask = await Task.WhenAny(mediaOpenedTask.Task, timeoutTask);
-
-                    if (completedTask == mediaOpenedTask.Task)
+                // Ожидаем, пока медиа будет готово к воспроизведению
+                VlcMediaElement.Visibility = Visibility.Visible;
+                
+                // Подписываемся на событие MediaOpened для восстановления позиции
+                TaskCompletionSource<bool> mediaOpenedTcs = new TaskCompletionSource<bool>();
+                
+                EventHandler<RoutedEventArgs> mediaOpenedHandler = null;
+                mediaOpenedHandler = (s, e) => 
+                {
+                    VlcMediaElement.MediaOpened -= mediaOpenedHandler;
+                    mediaOpenedTcs.TrySetResult(true);
+                };
+                
+                VlcMediaElement.MediaOpened += mediaOpenedHandler;
+                
+                // Устанавливаем таймаут на ожидание открытия медиа
+                var timeoutTask = Task.Delay(5000);
+                var completedTask = await Task.WhenAny(mediaOpenedTcs.Task, timeoutTask);
+                
+                // Восстанавливаем позицию и состояние воспроизведения
+                try
+                {
+                    if (completedTask != timeoutTask)
                     {
-                        mediaReady = true;
-                        System.Diagnostics.Debug.WriteLine("Media opened successfully");
+                        // Небольшая задержка для стабильности
+                        await Task.Delay(200);
+                        
+                        if (currentPosition.TotalSeconds > 0 && currentPosition <= _videoDuration)
+                        {
+                            VlcMediaElement.Position = currentPosition;
+                        }
+                        
+                        if (wasPlaying)
+                        {
+                            VlcMediaElement.Play();
+                        }
+                        System.Diagnostics.Debug.WriteLine($"Restored playback state: position={currentPosition.TotalSeconds}s, playing={wasPlaying}");
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine("Timeout waiting for media to open");
+                        System.Diagnostics.Debug.WriteLine("Media open timeout occurred, trying to restore state anyway");
+                        if (wasPlaying) VlcMediaElement.Play();
                     }
                 }
-                finally
+                catch (Exception ex)
                 {
-                    if (VideoPlayer?.MediaPlayer != null)
-                    {
-                        VideoPlayer.MediaPlayer.MediaOpened -= mediaOpenedHandler;
-                    }
+                    System.Diagnostics.Debug.WriteLine($"Error restoring playback state: {ex.Message}");
+                    try { if (wasPlaying) VlcMediaElement.Play(); } catch { }
                 }
-
-                VideoPlayer.Visibility = Visibility.Visible;
-
-                if (mediaReady && VideoPlayer?.MediaPlayer != null)
-                {
-                    try
-                    {
-                        await Task.Delay(500);
-
-                        if (currentPosition.TotalSeconds > 0 && currentPosition <= _videoDuration)
-                        {
-                            VideoPlayer.MediaPlayer.Position = currentPosition;
-                        }
-                        VideoPlayer.MediaPlayer.PlaybackSession.PlaybackRate = currentRate;
-
-                        if (wasPlaying)
-                        {
-                            VideoPlayer.MediaPlayer.Play();
-                        }
-
-                        System.Diagnostics.Debug.WriteLine($"Restored playback state: position={currentPosition.TotalSeconds}s, rate={currentRate}, playing={wasPlaying}");
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Error restoring playback state: {ex.Message}");
-                        try
-                        {
-                            if (wasPlaying)
-                            {
-                                VideoPlayer.MediaPlayer.Play();
-                            }
-                        }
-                        catch { }
-                    }
-                }
-                else if (VideoPlayer?.MediaPlayer != null)
-                {
-                    try
-                    {
-                        if (wasPlaying)
-                        {
-                            VideoPlayer.MediaPlayer.Play();
-                        }
-                        System.Diagnostics.Debug.WriteLine("Media not fully ready, but attempting to play");
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Error starting playback: {ex.Message}");
-
-                        if (!string.IsNullOrEmpty(_currentQuality))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Playback failed with quality {_currentQuality}, trying standard quality as fallback");
-                            _currentQuality = null;
-
-                            try
-                            {
-                                ApplyAndPlayCurrentUrlWithQuality();
-                                await Task.Delay(1000);
-                                if (wasPlaying)
-                                {
-                                    VideoPlayer.MediaPlayer.Play();
-                                }
-                            }
-                            catch (Exception ex2)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Standard quality fallback also failed: {ex2.Message}");
-                            }
-                        }
-                    }
-                }
-
-                var loadingTime = (DateTime.Now - startTime).TotalSeconds;
-                System.Diagnostics.Debug.WriteLine($"Quality changed to: {newQuality ?? "standard"} - Loading time: {loadingTime} seconds, Media ready: {mediaReady}");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error changing quality: {ex.Message}");
-
-                VideoPlayer.Visibility = Visibility.Visible;
-
-                try
-                {
-                    if (VideoPlayer?.MediaPlayer != null)
-                    {
-                        VideoPlayer.MediaPlayer.Play();
-                    }
-                }
-                catch { }
             }
             finally
             {
                 _isChangingQuality = false;
             }
+        }
+        private void StartPlaybackVlc(string videoUrl, bool autoPlay)
+        {
+            try
+            {
+                VlcMediaElement.AutoPlay = autoPlay;
+                var mediaSource = VLC.MediaSource.CreateFromUri(videoUrl);
+                VlcMediaElement.MediaSource = mediaSource;
+                VlcMediaElement.Visibility = Visibility.Visible;
+                if (autoPlay)
+                {
+                    VlcMediaElement.Play();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VLC.MediaElement] Failed to start playback: {ex.Message}");
+            }
+        }
+
+        private async Task DownloadCurrentVideoAsync()
+        {
+            try
+            {
+                string videoUrl = string.IsNullOrEmpty(_currentQuality)
+                    ? Config.GetVideoUrl(_currentVideoId)
+                    : Config.GetVideoUrl(_currentVideoId, _currentQuality);
+
+                var videosFolder = KnownFolders.VideosLibrary;
+                var downloadsFolder = await videosFolder.CreateFolderAsync("YouTube Downloads", CreationCollisionOption.OpenIfExists);
+
+                string safeTitle = SanitizeFileName(VideoTitleText?.Text ?? _currentVideoId ?? "video");
+                string q = string.IsNullOrEmpty(_currentQuality) ? "std" : _currentQuality;
+                string fileName = $"{safeTitle}_{q}.mp4";
+
+                var file = await downloadsFolder.CreateFileAsync(fileName, CreationCollisionOption.GenerateUniqueName);
+
+                using (var client = new HttpClient())
+                using (var response = await client.GetAsync(videoUrl, HttpCompletionOption.ResponseHeadersRead))
+                using (var src = await response.Content.ReadAsStreamAsync())
+                {
+                    var ras = await file.OpenAsync(FileAccessMode.ReadWrite);
+                    var outStream = ras.GetOutputStreamAt(0);
+                    var writer = new DataWriter(outStream);
+                    byte[] buffer = new byte[81920];
+                    int read;
+                    while ((read = await src.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        writer.WriteBuffer(buffer.AsBuffer(0, read));
+                    }
+                    await writer.StoreAsync();
+                    writer.DetachStream();
+                    writer.Dispose();
+                    await outStream.FlushAsync();
+                    outStream.Dispose();
+                    ras.Dispose();
+                }
+
+                var dialog = new ContentDialog
+                {
+                    Title = "Скачивание завершено",
+                    Content = $"Файл сохранён в Videos/YouTube Downloads: {file.Name}",
+                    PrimaryButtonText = "OK"
+                };
+                dialog.RequestedTheme = ElementTheme.Dark;
+                await dialog.ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = "Ошибка скачивания",
+                    Content = ex.Message,
+                    PrimaryButtonText = "OK"
+                };
+                dialog.RequestedTheme = ElementTheme.Dark;
+                await dialog.ShowAsync();
+            }
+        }
+
+        private string SanitizeFileName(string name)
+        {
+            try
+            {
+                var invalid = Path.GetInvalidFileNameChars();
+                var safe = new string(name.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray());
+                if (string.IsNullOrWhiteSpace(safe)) safe = "video";
+                return safe;
+            }
+            catch { return "video"; }
         }
 
         private string ReplaceOrAddQueryParameter(string url, string key, string value)
@@ -1471,34 +1403,7 @@ namespace YouTube
         }
     }
 
-    public class VideoInfo
-    {
-        [JsonProperty("video_id")]
-        public string video_id { get; set; }
-
-        [JsonProperty("title")]
-        public string title { get; set; }
-
-        [JsonProperty("author")]
-        public string author { get; set; }
-
-        [JsonProperty("thumbnail")]
-        public string thumbnail { get; set; }
-
-        [JsonProperty("channel_thumbnail")]
-        public string channel_thumbnail { get; set; }
-
-        [JsonProperty("views")]
-        public string Views { get; set; }
-
-        [JsonProperty("published_at")]
-        public string PublishedAt { get; set; }
-
-        public string Title => title;
-        public string Author => author;
-        public string Thumbnail => thumbnail;
-        public string ChannelThumbnail => channel_thumbnail;
-    }
+    
 
     public class VideoDetails
     {
