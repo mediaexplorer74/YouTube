@@ -82,6 +82,11 @@ namespace VLC
         public event EventHandler<MediaFailedRoutedEventArgs> MediaFailed;
 
         /// <summary>
+        /// Raised when the media element requests an element-only fullscreen. Hosts can handle this on Mobile.
+        /// </summary>
+        public event RoutedEventHandler ElementFullscreenRequested;
+
+        /// <summary>
         /// Instantiates a new instance of the MediaElement class.
         /// </summary>
         public MediaElement()
@@ -170,6 +175,12 @@ namespace VLC
             get => (TimeSpan)GetValue(PositionProperty);
             set => SetValue(PositionProperty, value);
         }
+
+        /// <summary>
+        /// Gets the media duration reported by the underlying player.
+        /// Updated when the length changes.
+        /// </summary>
+        public TimeSpan Duration { get; private set; } = TimeSpan.Zero;
 
         /// <summary>
         /// Identifies the <see cref="Volume"/> dependency property.
@@ -834,7 +845,11 @@ namespace VLC
                 eventManager.OnTrackAdded += EventManager_OnTrackAddedAsync;
                 eventManager.OnTrackSelected += async (trackType, trackId) => await Dispatcher.RunAsync(() => TransportControls?.OnTrackSelected(trackType, trackId));
                 eventManager.OnTrackDeleted += async (trackType, trackId) => await Dispatcher.RunAsync(() => TransportControls?.OnTrackDeleted(trackType, trackId));
-                eventManager.OnLengthChanged += async length => await Dispatcher.RunAsync(() => TransportControls?.OnLengthChanged(length));
+                eventManager.OnLengthChanged += async length => await Dispatcher.RunAsync(() =>
+                {
+                    Duration = TimeSpan.FromMilliseconds(length);
+                    TransportControls?.OnLengthChanged(length);
+                });
                 eventManager.OnTimeChanged += EventManager_OnTimeChangedAsync;
                 eventManager.OnSeekableChanged += async seekable => await Dispatcher.RunAsync(() => TransportControls?.OnSeekableChanged(seekable));
                 MediaPlayer = mediaPlayer;
@@ -852,14 +867,28 @@ namespace VLC
         /// </summary>
         public void ToggleFullscreen()
         {
-            var v = ApplicationView.GetForCurrentView();
-            if (v.IsFullScreenMode)
+            try
             {
-                v.ExitFullScreenMode();
+                // On Windows Mobile, request the host to perform element-only fullscreen via event.
+                if (AnalyticsInfo.VersionInfo.DeviceFamily == "Windows.Mobile")
+                {
+                    ElementFullscreenRequested?.Invoke(this, new RoutedEventArgs());
+                    return;
+                }
+
+                var v = ApplicationView.GetForCurrentView();
+                if (v.IsFullScreenMode)
+                {
+                    v.ExitFullScreenMode();
+                }
+                else
+                {
+                    v.TryEnterFullScreenMode();
+                }
             }
-            else
+            catch
             {
-                v.TryEnterFullScreenMode();
+                // swallow exceptions to protect legacy devices
             }
         }
 

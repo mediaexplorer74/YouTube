@@ -1229,10 +1229,11 @@ namespace VLC
                 viewModeChanging(this, cancelEventArgs);
                 await cancelEventArgs.WaitForDeferralsAsync();
             }
-            var applicationView = ApplicationView.GetForCurrentView();
-            if (cancelEventArgs.Cancel || await applicationView.TryEnterViewModeAsync(
-                applicationView.ViewMode == ApplicationViewMode.CompactOverlay ? ApplicationViewMode.Default : ApplicationViewMode.CompactOverlay))
+            try
             {
+                // Replace PiP (compact overlay) behavior by toggling fullscreen on the media element.
+                MediaElement?.ToggleFullscreen();
+
                 if (!cancelEventArgs.Cancel)
                 {
                     ViewModeChanged?.Invoke(this, new RoutedEventArgs());
@@ -1240,6 +1241,22 @@ namespace VLC
                 UpdateCompactOverlayModeState();
                 Show();
                 StartTimer();
+            }
+            catch
+            {
+                // Fallback to legacy compact overlay if ToggleFullscreen throws
+                var applicationView = ApplicationView.GetForCurrentView();
+                if (cancelEventArgs.Cancel || await applicationView.TryEnterViewModeAsync(
+                    applicationView.ViewMode == ApplicationViewMode.CompactOverlay ? ApplicationViewMode.Default : ApplicationViewMode.CompactOverlay))
+                {
+                    if (!cancelEventArgs.Cancel)
+                    {
+                        ViewModeChanged?.Invoke(this, new RoutedEventArgs());
+                    }
+                    UpdateCompactOverlayModeState();
+                    Show();
+                    StartTimer();
+                }
             }
         }
 

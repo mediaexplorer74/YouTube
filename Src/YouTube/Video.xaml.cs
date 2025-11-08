@@ -1,6 +1,6 @@
 ﻿using LibVLCSharp.Shared;
 using Newtonsoft.Json;
-﻿﻿﻿﻿﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -24,6 +24,7 @@ using Windows.UI.Xaml.Controls.Primitives;
 using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
 using Windows.UI.Xaml.Navigation;
+using Windows.System.Profile;
 using YouTube.Models;
 
 namespace YouTube
@@ -49,6 +50,9 @@ namespace YouTube
         private bool _isLiked = false;
         private bool _isChangingQuality = false; // Flag to prevent storage conflicts during quality change
         private TimeSpan _videoDuration;
+        private List<Comment> _lastComments = null;
+        private string _currentVideoTitle;
+        private string _currentVideoAuthor;
         // Переход на VLC.MediaElement: внутренний LibVLC управляется самим элементом
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -63,8 +67,7 @@ namespace YouTube
             this.InitializeComponent();
             _frame = Window.Current.Content as Frame;
 
-            NavigationManager.InitializeTabBarNavigation(tabbar, _frame);
-            NavigationManager.InitializeNavBarNavigation(navbar, _frame);
+            // No tabbar/navbars on simplified player page
 
             this.Loaded += Video_Loaded;
             // Remove Unloaded event subscription as cleanup will be handled in OnNavigatedFrom
@@ -87,20 +90,39 @@ namespace YouTube
 
         private void InitializePlaceholders()
         {
-            // Скрываем комментарии по умолчанию
-            CommentsContainerButton.Visibility = Visibility.Collapsed;
-
-            // Устанавливаем значения по умолчанию
-            VideoTitleText.Text = "Загрузка...";
-            VideoAuthorText.Text = "Загрузка...";
-            VideoViewsText.Text = "Загрузка...";
-            VideoUploadDateText.Text = "Загрузка...";
+            // Инициализация значения для одного комментария
+            try
+            {
+                if (LastCommentAuthor != null) LastCommentAuthor.Text = string.Empty;
+                if (LastCommentTime != null) LastCommentTime.Text = string.Empty;
+                if (LastCommentText != null) LastCommentText.Text = string.Empty;
+                if (LastCommentAuthorImage != null) LastCommentAuthorImage.Source = null;
+            }
+            catch { }
         }
 
         private void Video_Loaded(object sender, RoutedEventArgs e)
         {
             SystemNavigationManager.GetForCurrentView().BackRequested += OnBackRequested;
             UpdateVideoPlayerLayout();
+
+            // Map MediaElement's element-fullscreen requests (e.g. PiP button remapped) to host fullscreen handling
+            try
+            {
+                if (VlcMediaElement != null)
+                {
+                    VlcMediaElement.ElementFullscreenRequested -= VlcMediaElement_ElementFullscreenRequested;
+                    VlcMediaElement.ElementFullscreenRequested += VlcMediaElement_ElementFullscreenRequested;
+                }
+            }
+            catch { }
+
+            try
+            {
+                VideoPlayerContainer.SizeChanged -= VideoPlayerContainer_SizeChanged;
+                VideoPlayerContainer.SizeChanged += VideoPlayerContainer_SizeChanged;
+            }
+            catch { }
 
             // Инициализация VLC.MediaElement не требует ручного LibVLC — XAML-элемент справляется сам.
 
@@ -135,16 +157,42 @@ namespace YouTube
 
         private void OnBackRequested(object sender, BackRequestedEventArgs e)
         {
-            if (_isFullScreen)
+            try
             {
-                // Exit fullscreen first
-                ToggleFullScreen();
-                e.Handled = true;
+                // If we're in element-only fullscreen, exit that first
+                if (_isFullScreen)
+                {
+                    try
+                    {
+                        ExitElementFullScreen();
+                    }
+                    catch { }
+                    e.Handled = true;
+                    return;
+                }
+
+                var appView = Windows.UI.ViewManagement.ApplicationView.GetForCurrentView();
+                if (appView.IsFullScreenMode)
+                {
+                    // legacy: exit system fullscreen
+                    appView.ExitFullScreenMode();
+                    e.Handled = true;
+                    return;
+                }
+
+                if (_frame.CanGoBack)
+                {
+                    e.Handled = true;
+                    _frame.GoBack();
+                }
             }
-            else if (_frame.CanGoBack)
+            catch
             {
-                e.Handled = true;
-                _frame.GoBack();
+                if (_frame.CanGoBack)
+                {
+                    e.Handled = true;
+                    _frame.GoBack();
+                }
             }
         }
 
@@ -205,6 +253,9 @@ namespace YouTube
                 }
 
                 SystemNavigationManager.GetForCurrentView().BackRequested -= OnBackRequested;
+                SystemNavigationManager.GetForCurrentView().BackRequested -= Element_BackRequested;
+                try { if (VlcMediaElement != null) VlcMediaElement.ElementFullscreenRequested -= VlcMediaElement_ElementFullscreenRequested; } catch { }
+                try { VideoPlayerContainer.SizeChanged -= VideoPlayerContainer_SizeChanged; } catch { }
                 Window.Current.SizeChanged -= Window_SizeChanged;
             }
             catch (Exception) { }           
@@ -240,7 +291,6 @@ namespace YouTube
                     if (videoDetails != null && !string.IsNullOrEmpty(videoDetails.VideoUrl))
                     {
                         DisplayVideoInfo(videoDetails);
-                        await LoadRelatedVideos();
 
                         // Only add to history if not currently changing quality to avoid storage conflicts
                         if (!_isChangingQuality)
@@ -317,159 +367,38 @@ namespace YouTube
 
         private async Task LoadRelatedVideos()
         {
-            try
-            {
-                // Показать индикаторы загрузки
-                await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
-                {
-                    RelatedVideosLoadingRing.IsActive = true;
-                    RelatedVideosLoadingRing.Visibility = Visibility.Visible;
-                    RelatedVideosLoadingRingVertical.IsActive = true;
-                    RelatedVideosLoadingRingVertical.Visibility = Visibility.Visible;
-
-                    // Скрыть контейнеры с видео
-                    RelatedVideosContainer.Visibility = Visibility.Collapsed;
-                    RelatedVideosContainerVertical.Visibility = Visibility.Collapsed;
-                });
-
-                var localSettings = ApplicationData.Current.LocalSettings;
-                if (!localSettings.Values.ContainsKey("YouTubeApiKey"))
-                {
-                    return;
-                }
-
-                string apiKey = localSettings.Values["YouTubeApiKey"].ToString();
-                string relatedUrl = $"{_apiBaseUrl}get_related_videos.php?video_id={_currentVideoId}&page={_relatedVideosPage}&apikey={apiKey}&token={Uri.EscapeDataString(Config.UserToken)}";
-
-                using (var client = new HttpClient())
-                {
-                    var response = await client.GetStringAsync(relatedUrl);
-                    var videos = JsonConvert.DeserializeObject<List<VideoInfo>>(response);
-
-                    if (videos != null)
-                    {
-                        _relatedVideos.AddRange(videos);
-
-                        await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
-                        {
-                            RelatedVideosContainer.ItemsSource = null;
-                            RelatedVideosContainer.ItemsSource = _relatedVideos;
-                            RelatedVideosContainerVertical.ItemsSource = null;
-                            RelatedVideosContainerVertical.ItemsSource = _relatedVideos;
-
-                            // Показать контейнеры с видео и скрыть индикаторы
-                            RelatedVideosContainer.Visibility = Visibility.Visible;
-                            RelatedVideosContainerVertical.Visibility = Visibility.Visible;
-
-                            RelatedVideosLoadingRing.IsActive = false;
-                            RelatedVideosLoadingRing.Visibility = Visibility.Collapsed;
-                            RelatedVideosLoadingRingVertical.IsActive = false;
-                            RelatedVideosLoadingRingVertical.Visibility = Visibility.Collapsed;
-                        });
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                await Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () =>
-                {
-                    // В случае ошибки тоже скрываем индикаторы
-                    RelatedVideosLoadingRing.IsActive = false;
-                    RelatedVideosLoadingRing.Visibility = Visibility.Collapsed;
-                    RelatedVideosLoadingRingVertical.IsActive = false;
-                    RelatedVideosLoadingRingVertical.Visibility = Visibility.Collapsed;
-
-                    // Показываем контейнеры (даже если пустые)
-                    RelatedVideosContainer.Visibility = Visibility.Visible;
-                    RelatedVideosContainerVertical.Visibility = Visibility.Visible;
-                });
-            }
+            // Related videos removed in simplified player; keep stub for compatibility
+            await Task.CompletedTask;
         }
 
         private void DisplayVideoInfo(VideoDetails video)
         {
-            VideoTitleText.Text = video.Title;
-            VideoAuthorText.Text = video.Author;
+            // Minimal UI: store title/author and show last comment only
+            _currentVideoId = video.VideoId;
+            _currentVideoTitle = video.Title;
+            _currentVideoAuthor = video.Author;
             _currentVideoDescription = video.Description;
-            VideoViewsText.Text = FormatViewsCount(video.Views) + " просмотров";
-            VideoUploadDateText.Text = FormatRelativeDate(video.PublishedAt);
-
-            // Format and display subscriber count
-            if (!string.IsNullOrEmpty(video.SubscriberCount))
-            {
-                SubscriberCountText.Text = FormatSubscriberCount(video.SubscriberCount);
-            }
-            else
-            {
-                SubscriberCountText.Text = "";
-            }
-
-            // Инициализация лайков
-            _currentLikes = video.Likes;
-            _isLiked = false;
-            LikeCountText.Text = FormatViewsCount(_currentLikes);
-
-            // Improved avatar loading with better error handling
-            try
-            {
-                if (!string.IsNullOrEmpty(video.ChannelThumbnail))
-                {
-                    var bitmap = new Windows.UI.Xaml.Media.Imaging.BitmapImage();
-                    bitmap.ImageFailed += (sender, e) =>
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Failed to load channel avatar: {video.ChannelThumbnail}");
-                    };
-                    bitmap.UriSource = new Uri(video.ChannelThumbnail);
-                    ChannelImage.Source = bitmap;
-                }
-                else
-                {
-                    ChannelImage.Source = null;
-                    System.Diagnostics.Debug.WriteLine("No channel thumbnail available");
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error setting channel avatar: {ex.Message}");
-                ChannelImage.Source = null;
-            }
-
-            // Parse duration from metadata
             _videoDuration = ParseIsoDuration(video.Duration);
 
-            // Store video ID and construct base URL for quality system compatibility
-            _currentVideoId = video.VideoId;
-            _currentVideoUrl = Config.GetVideoUrl(_currentVideoId); // Base URL without quality
-            ApplyAndPlayCurrentUrlWithQuality();
-
-            // Обработка комментариев
-            if (video.Comments != null && video.Comments.Count > 0)
+            // Save comments for dialog; show the last comment (first in list)
+            _lastComments = video.Comments;
+            if (_lastComments != null && _lastComments.Count >0)
             {
-                // Отображаем последний комментарий
-                var lastComment = video.Comments.First();
-                CommentsContainerButton.Visibility = Visibility.Visible;
-
-                CommentCountText.Text = $"• {video.CommentCount:N0}";
-                LastCommentAuthor.Text = "@" + lastComment.Author;
-                LastCommentTime.Text = lastComment.PublishedAt;
-                LastCommentText.Text = lastComment.Text.Length > 100
-                    ? lastComment.Text.Substring(0, 100) + "..."
-                    : lastComment.Text;
-
-                if (!string.IsNullOrEmpty(lastComment.AuthorThumbnail))
-                {
-                    LastCommentAuthorImage.Source = new Windows.UI.Xaml.Media.Imaging.BitmapImage(new Uri(lastComment.AuthorThumbnail));
-                }
-
-                // Сохраняем все комментарии для модального окна
-                CommentsList.ItemsSource = video.Comments;
+                var lastComment = _lastComments.First();
+                LastCommentAuthor.Text = "@" + (lastComment.Author ?? "");
+                LastCommentTime.Text = lastComment.PublishedAt ?? "";
+                LastCommentText.Text = lastComment.Text?.Length >100 ? lastComment.Text.Substring(0,100) + "..." : lastComment.Text;
+                try { LastCommentAuthorImage.Source = string.IsNullOrEmpty(lastComment.AuthorThumbnail) ? null : new Windows.UI.Xaml.Media.Imaging.BitmapImage(new Uri(lastComment.AuthorThumbnail)); } catch { LastCommentAuthorImage.Source = null; }
+                LastCommentContainer.Visibility = Visibility.Visible;
             }
             else
             {
-                CommentsContainerButton.Visibility = Visibility.Collapsed;
-                CommentsList.ItemsSource = null;
+                LastCommentContainer.Visibility = Visibility.Collapsed;
             }
 
+            // Start playback
+            _currentVideoUrl = string.IsNullOrEmpty(video.VideoUrl) ? Config.GetVideoUrl(video.VideoId) : video.VideoUrl;
+            ApplyAndPlayCurrentUrlWithQuality();
             RequestDisplayKeepOn();
         }
 
@@ -674,7 +603,12 @@ namespace YouTube
                     var currentPosition = VlcMediaElement.Position;
                     var newPosition = currentPosition.Add(TimeSpan.FromSeconds(skipSeconds));
                     if (newPosition < TimeSpan.Zero) newPosition = TimeSpan.Zero;
-                    else if (newPosition > _videoDuration) newPosition = _videoDuration;
+
+                    var effectiveDuration = GetMediaDuration();
+                    if (effectiveDuration > TimeSpan.Zero && newPosition > effectiveDuration)
+                    {
+                        newPosition = effectiveDuration;
+                    }
                     VlcMediaElement.Position = newPosition;
                 }
                 catch { }
@@ -685,6 +619,20 @@ namespace YouTube
                 _skipOverlayTimer.Start();
             }
             catch (Exception) { }
+        }
+
+        private TimeSpan GetMediaDuration()
+        {
+            try
+            {
+                if (VlcMediaElement != null && VlcMediaElement.Duration > TimeSpan.Zero)
+                {
+                    return VlcMediaElement.Duration;
+                }
+            }
+            catch { }
+
+            return _videoDuration;
         }
 
         private void SkipOverlayTimer_Tick(object sender, object e)
@@ -723,105 +671,33 @@ namespace YouTube
         {
             try
             {
-                var scrollViewer = new ScrollViewer
-                {
-                    MaxHeight = 500,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-                };
-
+                var scrollViewer = new ScrollViewer { MaxHeight =500, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
                 var commentsPanel = new StackPanel();
-
-                if (CommentsList.ItemsSource != null)
+                if (_lastComments != null && _lastComments.Count >0)
                 {
-                    var comments = CommentsList.ItemsSource as List<Comment>;
-                    if (comments != null)
+                    foreach (var comment in _lastComments)
                     {
-                        foreach (var comment in comments)
+                        var commentContainer = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0,10,0,10) };
+                        var avatarBorder = new Border { Width=36, Height=36, CornerRadius=new CornerRadius(18), Background=new SolidColorBrush(Windows.UI.Color.FromArgb(255,51,51,51)), Margin=new Thickness(0,0,8,0) };
+                        if (!string.IsNullOrEmpty(comment.AuthorThumbnail))
                         {
-                            var commentContainer = new StackPanel
-                            {
-                                Orientation = Orientation.Horizontal,
-                                Margin = new Thickness(0, 10, 0, 10)
-                            };
-
-                            var avatarBorder = new Border
-                            {
-                                Width = 36,
-                                Height = 36,
-                                CornerRadius = new CornerRadius(18),
-                                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 51, 51, 51))
-                            };
-
-                            if (!string.IsNullOrEmpty(comment.AuthorThumbnail))
-                            {
-                                var avatarImage = new Image
-                                {
-                                    Source = new Windows.UI.Xaml.Media.Imaging.BitmapImage(new Uri(comment.AuthorThumbnail)),
-                                    Stretch = Stretch.UniformToFill
-                                };
-                                avatarBorder.Child = avatarImage;
-                            }
-
-                            var textPanel = new StackPanel
-                            {
-                                Margin = new Thickness(10, 0, 0, 0)
-                            };
-
-                            var authorText = new TextBlock
-                            {
-                                Text = comment.Author,
-                                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 170, 170, 170)),
-                                FontWeight = Windows.UI.Text.FontWeights.Bold
-                            };
-
-                            var timeText = new TextBlock
-                            {
-                                Text = comment.PublishedAt,
-                                Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 102, 102, 102)),
-                                FontSize = 12
-                            };
-
-                            var commentText = new TextBlock
-                            {
-                                Text = comment.Text,
-                                Foreground = new SolidColorBrush(Windows.UI.Colors.White),
-                                TextWrapping = TextWrapping.Wrap,
-                                MaxWidth = 500
-                            };
-
-                            textPanel.Children.Add(authorText);
-                            textPanel.Children.Add(timeText);
-                            textPanel.Children.Add(commentText);
-
-                            commentContainer.Children.Add(avatarBorder);
-                            commentContainer.Children.Add(textPanel);
-
-                            commentsPanel.Children.Add(commentContainer);
+                            try { avatarBorder.Child = new Image { Source = new Windows.UI.Xaml.Media.Imaging.BitmapImage(new Uri(comment.AuthorThumbnail)), Stretch = Stretch.UniformToFill }; } catch { }
                         }
+                        var textPanel = new StackPanel { Margin = new Thickness(10,0,0,0) };
+                        textPanel.Children.Add(new TextBlock { Text = comment.Author, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255,170,170,170)), FontWeight = Windows.UI.Text.FontWeights.Bold });
+                        textPanel.Children.Add(new TextBlock { Text = comment.PublishedAt, Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255,102,102,102)), FontSize=12 });
+                        textPanel.Children.Add(new TextBlock { Text = comment.Text, Foreground = new SolidColorBrush(Windows.UI.Colors.White), TextWrapping = TextWrapping.Wrap, MaxWidth =500 });
+                        commentContainer.Children.Add(avatarBorder);
+                        commentContainer.Children.Add(textPanel);
+                        commentsPanel.Children.Add(commentContainer);
                     }
                 }
                 else
                 {
-                    var noCommentsText = new TextBlock
-                    {
-                        Text = "Комментарии недоступны",
-                        Foreground = new SolidColorBrush(Windows.UI.Colors.Gray),
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        Margin = new Thickness(0, 20, 0, 20)
-                    };
-                    commentsPanel.Children.Add(noCommentsText);
+                    commentsPanel.Children.Add(new TextBlock { Text = "Комментарии недоступны", Foreground = new SolidColorBrush(Windows.UI.Colors.Gray), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0,20,0,20) });
                 }
-
                 scrollViewer.Content = commentsPanel;
-
-                var dialog = new ContentDialog
-                {
-                    Title = "Комментарии",
-                    Content = scrollViewer,
-                    PrimaryButtonText = "Закрыть",
-                    Background = new SolidColorBrush(Windows.UI.Colors.Black)
-                };
-
+                var dialog = new ContentDialog { Title = "Комментарии", Content = scrollViewer, PrimaryButtonText = "Закрыть", Background = new SolidColorBrush(Windows.UI.Colors.Black) };
                 dialog.RequestedTheme = ElementTheme.Dark;
                 await dialog.ShowAsync();
             }
@@ -850,12 +726,12 @@ namespace YouTube
                 if (_isLiked)
                 {
                     _currentLikes++;
-                    LikeCountText.Text = FormatViewsCount(_currentLikes);
+                    // LikeCountText.Text = FormatViewsCount(_currentLikes);
                 }
                 else
                 {
-                    _currentLikes = Math.Max(0, _currentLikes - 1);
-                    LikeCountText.Text = FormatViewsCount(_currentLikes);
+                    _currentLikes = Math.Max(0, _currentLikes -1);
+                    // LikeCountText.Text = FormatViewsCount(_currentLikes);
                 }
             }
             catch (Exception ex)
@@ -871,7 +747,7 @@ namespace YouTube
                 if (!string.IsNullOrEmpty(_currentVideoId))
                 {
                     string shareUrl = $"https://youtube.com/watch?v={_currentVideoId}";
-                    string shareText = $"Посмотри это видео: {VideoTitleText.Text}";
+                    string shareText = $"Посмотри это видео: {_currentVideoTitle ?? _currentVideoId}";
 
                     var dialog = new ContentDialog
                     {
@@ -938,9 +814,9 @@ namespace YouTube
         {
             try
             {
-                if (!string.IsNullOrEmpty(VideoAuthorText.Text))
+                if (!string.IsNullOrEmpty(_currentVideoAuthor))
                 {
-                    _frame.Navigate(typeof(Channel), VideoAuthorText.Text);
+                    _frame.Navigate(typeof(Channel), _currentVideoAuthor);
                 }
             }
             catch (Exception) { }
@@ -953,31 +829,76 @@ namespace YouTube
 
         private void UpdateVideoPlayerLayout()
         {
-            var windowWidth = Window.Current.Bounds.Width;
-            var windowHeight = Window.Current.Bounds.Height;
-            bool isPortrait = windowHeight > windowWidth;
+            try
+            {
+                var container = VideoPlayerContainer ?? (FrameworkElement)VlcMediaElement.Parent;
+                if (container == null) return;
 
-            PlayerColumn.Width = new GridLength(1, GridUnitType.Star);
-            if (isPortrait)
-            {
-                RelatedColumn.Width = new GridLength(0);
-                RelatedPanel.Visibility = Visibility.Collapsed;
-                RelatedPanelVertical.Visibility = Visibility.Visible;
-                VlcMediaElement.Height = windowWidth * 0.5625; // 16:9
+                var containerWidth = container.ActualWidth;
+                var containerHeight = container.ActualHeight;
+
+                // keep16:9 aspect while fitting container bounds when not fullscreen
+                if (!_isFullScreen)
+                {
+                    // desired height based on16:9 aspect
+                    double desiredH = containerWidth *9.0 /16.0;
+                    double finalHeight = desiredH <= containerHeight ? desiredH : containerHeight;
+                    VlcMediaElement.Width = containerWidth;
+                    VlcMediaElement.Height = finalHeight;
+                }
+                else
+                {
+                    // fullscreen handled by popup sizing
+                }
             }
-            else
-            {
-                RelatedColumn.Width = new GridLength(400);
-                RelatedPanel.Visibility = Visibility.Visible;
-                RelatedPanelVertical.Visibility = Visibility.Collapsed;
-                VlcMediaElement.Height = 300;
-            }
-            PlayerInfoPanel.Margin = new Thickness(0);
+            catch { }
         }
 
-        // Полноэкранный режим временно отключён согласно указанию
-        private async void ToggleFullScreen() 
-        { 
+        private async void ToggleFullScreen()
+        {
+            try
+            {
+                // On desktop/other devices, prefer system/full-application fullscreen (hides title/taskbar).
+                try
+                {
+                    if (AnalyticsInfo.VersionInfo.DeviceFamily != "Windows.Mobile")
+                    {
+                        // Delegate to media element which calls ApplicationView.TryEnterFullScreenMode()
+                        VlcMediaElement?.ToggleFullscreen();
+                        // Update our flag based on ApplicationView
+                        var appView = Windows.UI.ViewManagement.ApplicationView.GetForCurrentView();
+                        _isFullScreen = appView.IsFullScreenMode;
+                        UpdateVideoPlayerLayout();
+                        UpdateFullscreenButtonIcon();
+                        return;
+                    }
+                }
+                catch { }
+
+                // On Windows.Mobile use element-only popup fullscreen
+                if (_isFullScreen)
+                {
+                    ExitElementFullScreen();
+                }
+                else
+                {
+                    EnterElementFullScreen();
+                }
+
+                // update layout and button
+                UpdateVideoPlayerLayout();
+                UpdateFullscreenButtonIcon();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ToggleFullScreen error: {ex.Message}");
+            }
+        }
+
+        // Exposed for host controls to request element fullscreen (safe public wrapper)
+        public void HostToggleFullScreen()
+        {
+            ToggleFullScreen();
         }
 
         private async void Controls_SettingsClicked(object sender, EventArgs e)
@@ -1170,7 +1091,8 @@ namespace YouTube
                         // Небольшая задержка для стабильности
                         await Task.Delay(200);
                         
-                        if (currentPosition.TotalSeconds > 0 && currentPosition <= _videoDuration)
+                        var dur = GetMediaDuration();
+                        if (currentPosition.TotalSeconds > 0 && (dur == TimeSpan.Zero || currentPosition <= dur))
                         {
                             VlcMediaElement.Position = currentPosition;
                         }
@@ -1228,7 +1150,7 @@ namespace YouTube
                 var videosFolder = KnownFolders.VideosLibrary;
                 var downloadsFolder = await videosFolder.CreateFolderAsync("YouTube Downloads", CreationCollisionOption.OpenIfExists);
 
-                string safeTitle = SanitizeFileName(VideoTitleText?.Text ?? _currentVideoId ?? "video");
+                string safeTitle = SanitizeFileName(!string.IsNullOrEmpty(_currentVideoTitle) ? _currentVideoTitle : (_currentVideoId ?? "video"));
                 string q = string.IsNullOrEmpty(_currentQuality) ? "std" : _currentQuality;
                 string fileName = $"{safeTitle}_{q}.mp4";
 
@@ -1400,6 +1322,26 @@ namespace YouTube
                 return result;
             }
             catch { return url; }
+        }
+
+        // Handler invoked when MediaElement requests element-only fullscreen (via VLC.MediaElement.ElementFullscreenRequested)
+        private void VlcMediaElement_ElementFullscreenRequested(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var _ = Dispatcher.RunAsync(CoreDispatcherPriority.Normal, () => { ToggleFullScreen(); });
+            }
+            catch { }
+        }
+
+        // Keep layout in sync when container size changes
+        private void VideoPlayerContainer_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            try
+            {
+                UpdateVideoPlayerLayout();
+            }
+            catch { }
         }
     }
 
