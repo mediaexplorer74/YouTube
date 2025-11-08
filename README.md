@@ -45,7 +45,7 @@ My fork of zemon's youtube_uwp project for my own micro-research. No less, no mo
 - Not working in my location (95 % of errors with my google youtube api key, heh!)
 
 ## Very big problem
-- No media playback on Windows10Mobile! ARM edition suddenly halt :( However, x64 edition operates normally... so strange!!!
+- Bad MediaElement controls location (Fullscreen mode) !!!
 
 ## TODO
 - Add Fullscreen mode on/off switch handling.
